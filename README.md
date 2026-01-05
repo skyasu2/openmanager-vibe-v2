@@ -5,7 +5,7 @@
 ## 데모 사용 방법
 
 1. **GitHub 저장소**: https://github.com/skyasu2/openmanager-vibe-demo
-2. **라이브 데모**: https://deluxe-pony-b02296.netlify.app/ 에서 직접 사용해 볼 수 있습니다.
+2. **라이브 데모**: https://openmanager-vibe-v2.netlify.app/ 에서 직접 사용해 볼 수 있습니다.
 3. **로컬 실행**: 저장소를 클론하여 `index.html` 파일을 브라우저에서 열어 실행할 수 있습니다.
 
 ## 프로젝트 파일 구조
