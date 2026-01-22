@@ -9,13 +9,16 @@ class Agent {
         this.lastCheckTimestamp = null;
         this.detectedIncidents = []; // 감지된 장애 보고서 저장
         this.incidentHistory = []; // 장애 이력 (간단히 최신 몇 개만 유지)
-        this.maxHistory = 10;
+        // settings.local.js에서 설정 로드
+        const agentConfig = window.AppSettings?.agent || {};
+        const failureConfig = window.AppSettings?.failureDetection || {};
+        this.maxHistory = agentConfig.maxHistory || 10;
 
         // 장애 감지 조건 정의
         this.failureConditions = [
-            { id: 'high_cpu', name: '높은 CPU 사용률', condition: server => server.cpu_usage > 90, serverMetric: s => s.cpu_usage, unit: '%' },
-            { id: 'high_memory', name: '높은 메모리 사용률', condition: server => server.memory_usage_percent > 85, serverMetric: s => s.memory_usage_percent, unit: '%' },
-            { id: 'high_disk', name: '높은 디스크 사용률', condition: server => server.disk && server.disk[0] && server.disk[0].disk_usage_percent > 80, serverMetric: s => (s.disk && s.disk[0] ? s.disk[0].disk_usage_percent : 0), unit: '%' },
+            { id: 'high_cpu', name: '높은 CPU 사용률', condition: server => server.cpu_usage > (failureConfig.highCpu || 90), serverMetric: s => s.cpu_usage, unit: '%' },
+            { id: 'high_memory', name: '높은 메모리 사용률', condition: server => server.memory_usage_percent > (failureConfig.highMemory || 85), serverMetric: s => s.memory_usage_percent, unit: '%' },
+            { id: 'high_disk', name: '높은 디스크 사용률', condition: server => server.disk && server.disk[0] && server.disk[0].disk_usage_percent > (failureConfig.highDisk || 80), serverMetric: s => (s.disk && s.disk[0] ? s.disk[0].disk_usage_percent : 0), unit: '%' },
             { id: 'network_errors', name: '네트워크 오류', condition: server => (server.net && (server.net.rx_errors > 0 || server.net.tx_errors > 0)), serverMetric: s => (s.net ? s.net.rx_errors + s.net.tx_errors : 0), unit: '개' },
             { id: 'zombie_processes', name: '좀비 프로세스 발생', condition: server => server.zombie_count > 0, serverMetric: s => s.zombie_count, unit: '개' },
             { 

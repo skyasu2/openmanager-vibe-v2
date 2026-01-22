@@ -11,9 +11,11 @@
 
 class DummyDataGenerator {
     constructor() {
-        this.serverCount = 50; // 50대 서버
-        this.initialBatchSize = 10; // 첫 로딩시 10대만 우선 생성
-        this.updateInterval = 10 * 60 * 1000; // 10분 (밀리초 단위)
+        // settings.local.js에서 설정 로드
+        const config = window.AppSettings?.dataGenerator || {};
+        this.serverCount = config.serverCount || 50;
+        this.initialBatchSize = config.initialBatchSize || 10;
+        this.updateInterval = config.updateInterval || 10 * 60 * 1000;
         
         // 최종 상태 목표치 (ai_processor.js가 판단)
         this.targetCriticalRatio = 0.03; // 심각 상태 서버 비율 목표 (50대 중 1-2대로 줄임)

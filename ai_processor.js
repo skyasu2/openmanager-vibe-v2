@@ -8,7 +8,8 @@ class AIProcessor {
     constructor() {
         this.serverData = null;
         this.historicalData = {};  // 10분 단위 데이터 저장
-        this.maxHistoryPoints = 144;  // 24시간 (10분 단위)
+        // settings.local.js에서 설정 로드
+        this.maxHistoryPoints = window.AppSettings?.aiProcessor?.maxHistoryPoints || 144;
         this.problemPatterns = this.initProblemPatterns();
         this.initializeData();
         this.setupDataListener();

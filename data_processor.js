@@ -49,18 +49,10 @@ class DataProcessor {
                 this.aiProcessor = null;
             }
             
-            // 서버 상태 평가 임계값 - 통합 관리
-            this.thresholds = {
-                critical: {
-                    cpu: 90,
-                    memory: 90,
-                    disk: 90
-                },
-                warning: {
-                    cpu: 70,
-                    memory: 70,
-                    disk: 70
-                }
+            // 서버 상태 평가 임계값 - settings.local.js에서 로드
+            this.thresholds = window.AppSettings?.thresholds || {
+                critical: { cpu: 90, memory: 90, disk: 90 },
+                warning: { cpu: 70, memory: 70, disk: 70 }
             };
             
             // UI 요소 참조 - 안전하게 참조를 시도합니다
