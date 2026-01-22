@@ -4,6 +4,163 @@
  * 자동 문제 분석 및 해결 방법을 제공합니다.
  */
 
+/**
+ * 대화 컨텍스트 관리 클래스
+ * 이전 쿼리와 결과를 저장하여 후속 질문을 처리합니다.
+ */
+class ConversationManager {
+    constructor() {
+        this.storageKey = 'openmanager_conversation_history';
+        this.maxHistorySize = window.AppSettings?.conversation?.maxHistorySize || 10;
+        this.followUpIndicators = ['이 중에서', '그 중', '그리고', '또한', '추가로', '그러면', '그럼', '이중', '그중에서', '위에서'];
+        this.filterIndicators = {
+            serverType: ['웹서버', '웹 서버', 'DB서버', 'DB 서버', 'API서버', 'API 서버', '캐시서버', '캐시 서버'],
+            status: ['심각', '경고', '정상', 'critical', 'warning', 'normal'],
+            metric: ['CPU', 'cpu', '메모리', 'memory', '디스크', 'disk', '네트워크', 'network']
+        };
+    }
+
+    // 대화 이력 가져오기
+    getHistory() {
+        try {
+            const history = sessionStorage.getItem(this.storageKey);
+            return history ? JSON.parse(history) : [];
+        } catch (e) {
+            console.warn('[ConversationManager] 이력 로드 실패:', e);
+            return [];
+        }
+    }
+
+    // 대화 이력에 추가
+    addToHistory(query, result, context = {}) {
+        try {
+            const history = this.getHistory();
+            history.push({
+                query,
+                result,
+                context,
+                timestamp: new Date().toISOString(),
+                serverList: context.serverList || []
+            });
+
+            // 최대 크기 유지
+            while (history.length > this.maxHistorySize) {
+                history.shift();
+            }
+
+            sessionStorage.setItem(this.storageKey, JSON.stringify(history));
+        } catch (e) {
+            console.warn('[ConversationManager] 이력 저장 실패:', e);
+        }
+    }
+
+    // 마지막 쿼리 가져오기
+    getLastQuery() {
+        const history = this.getHistory();
+        return history.length > 0 ? history[history.length - 1] : null;
+    }
+
+    // 후속 질문 여부 확인
+    isFollowUp(query) {
+        const lowerQuery = query.toLowerCase();
+        return this.followUpIndicators.some(indicator =>
+            lowerQuery.includes(indicator.toLowerCase())
+        );
+    }
+
+    // 후속 질문에서 필터 조건 추출
+    extractFollowUpFilter(query) {
+        const filters = {
+            serverType: null,
+            status: null,
+            metric: null
+        };
+
+        const lowerQuery = query.toLowerCase();
+
+        // 서버 타입 필터 추출
+        for (const indicator of this.filterIndicators.serverType) {
+            if (lowerQuery.includes(indicator.toLowerCase())) {
+                if (indicator.toLowerCase().includes('웹')) filters.serverType = 'web';
+                else if (indicator.toLowerCase().includes('db')) filters.serverType = 'db';
+                else if (indicator.toLowerCase().includes('api')) filters.serverType = 'api';
+                else if (indicator.toLowerCase().includes('캐시')) filters.serverType = 'cache';
+                break;
+            }
+        }
+
+        // 상태 필터 추출
+        for (const indicator of this.filterIndicators.status) {
+            if (lowerQuery.includes(indicator.toLowerCase())) {
+                if (indicator.toLowerCase().includes('심각') || indicator.toLowerCase().includes('critical')) {
+                    filters.status = 'critical';
+                } else if (indicator.toLowerCase().includes('경고') || indicator.toLowerCase().includes('warning')) {
+                    filters.status = 'warning';
+                } else if (indicator.toLowerCase().includes('정상') || indicator.toLowerCase().includes('normal')) {
+                    filters.status = 'normal';
+                }
+                break;
+            }
+        }
+
+        // 메트릭 필터 추출
+        for (const indicator of this.filterIndicators.metric) {
+            if (lowerQuery.includes(indicator.toLowerCase())) {
+                if (indicator.toLowerCase().includes('cpu')) filters.metric = 'cpu';
+                else if (indicator.toLowerCase().includes('메모리') || indicator.toLowerCase().includes('memory')) {
+                    filters.metric = 'memory';
+                } else if (indicator.toLowerCase().includes('디스크') || indicator.toLowerCase().includes('disk')) {
+                    filters.metric = 'disk';
+                } else if (indicator.toLowerCase().includes('네트워크') || indicator.toLowerCase().includes('network')) {
+                    filters.metric = 'network';
+                }
+                break;
+            }
+        }
+
+        return filters;
+    }
+
+    // 이전 결과에 필터 적용
+    applyFilterToContext(previousContext, filters) {
+        if (!previousContext || !previousContext.serverList) {
+            return null;
+        }
+
+        let filteredServers = [...previousContext.serverList];
+
+        // 서버 타입 필터
+        if (filters.serverType) {
+            filteredServers = filteredServers.filter(server =>
+                server.hostname && server.hostname.toLowerCase().includes(filters.serverType)
+            );
+        }
+
+        // 상태 필터
+        if (filters.status) {
+            filteredServers = filteredServers.filter(server =>
+                server.status === filters.status
+            );
+        }
+
+        return filteredServers;
+    }
+
+    // 대화 이력 초기화
+    clearHistory() {
+        sessionStorage.removeItem(this.storageKey);
+    }
+
+    // 최근 쿼리 목록 가져오기 (자동완성용)
+    getRecentQueries(limit = 5) {
+        const history = this.getHistory();
+        return history
+            .slice(-limit)
+            .map(item => item.query)
+            .reverse();
+    }
+}
+
 class AIProcessor {
     constructor() {
         this.serverData = null;
@@ -18,6 +175,127 @@ class AIProcessor {
             warning: '⚠️',
             critical: '🔴'
         };
+        // 퍼지 매칭을 위한 키워드 사전 초기화
+        this.initFuzzySearch();
+        // 대화 컨텍스트 관리자 초기화
+        this.conversationManager = new ConversationManager();
+    }
+
+    // Fuse.js 퍼지 검색 초기화
+    initFuzzySearch() {
+        // 한국어 변형 및 오타를 포함한 키워드 매핑
+        this.keywordNormalizations = [
+            // CPU 관련
+            { keywords: ['cpu', '씨피유', '시피유', 'CPU', 'Cpu', '프로세서', 'processor', 'cpuu', 'spu'], normalized: 'cpu' },
+            // 메모리 관련
+            { keywords: ['memory', '메모리', 'ram', 'RAM', '램', '기억장치', 'memroy', 'memeory', '메머리'], normalized: 'memory' },
+            // 디스크 관련
+            { keywords: ['disk', '디스크', '저장소', 'storage', 'hdd', 'ssd', '하드', '스토리지', 'diks', '디크스'], normalized: 'disk' },
+            // 네트워크 관련
+            { keywords: ['network', '네트워크', '망', '인터넷', 'connection', '연결', '통신', 'netwrok', '네트웍'], normalized: 'network' },
+            // 서비스 관련
+            { keywords: ['service', '서비스', 'svc', 'daemon', '데몬', 'serivce', '서버스'], normalized: 'service' },
+            // 서버 타입 관련
+            { keywords: ['web', '웹', 'www', 'http', 'wbe'], normalized: 'web' },
+            { keywords: ['db', 'database', '데이터베이스', 'sql', 'mysql', 'postgres', 'DB'], normalized: 'db' },
+            { keywords: ['api', 'API', 'rest', 'restful', 'endpoint'], normalized: 'api' },
+            { keywords: ['cache', '캐시', 'redis', 'memcached', '캐쉬'], normalized: 'cache' },
+            // 상태 관련
+            { keywords: ['critical', '심각', '위험', '긴급', '크리티컬', 'crtical'], normalized: 'critical' },
+            { keywords: ['warning', '경고', '주의', '워닝', 'warnig'], normalized: 'warning' },
+            { keywords: ['normal', '정상', '양호', '안정', '노말'], normalized: 'normal' },
+            // 동작 관련
+            { keywords: ['상태', 'status', '확인', 'check', '조회', '스테이터스'], normalized: 'status' },
+            { keywords: ['분석', 'analyze', 'analysis', '진단', '애널라이즈'], normalized: 'analyze' },
+            { keywords: ['목록', 'list', '리스트', '나열', '표시', '보여줘'], normalized: 'list' },
+            // 문제 관련
+            { keywords: ['오류', 'error', '에러', '장애', '문제', 'eroor', '에라'], normalized: 'error' },
+            { keywords: ['높은', 'high', '과부하', '초과', '높음', '하이'], normalized: 'high' },
+            { keywords: ['부족', 'low', '낮은', '부족함', '없음'], normalized: 'low' },
+            // 좀비 프로세스
+            { keywords: ['zombie', '좀비', 'zombi', '좀비프로세스'], normalized: 'zombie' },
+            // 지역 관련
+            { keywords: ['지역', 'region', '리전', '지역별'], normalized: 'region' },
+            // 추이 관련
+            { keywords: ['추이', 'trend', '트렌드', '변화', '추세', '24시간'], normalized: 'trend' }
+        ];
+
+        // Fuse.js 인스턴스 생성
+        if (typeof Fuse !== 'undefined') {
+            const allKeywords = this.keywordNormalizations.flatMap(item =>
+                item.keywords.map(keyword => ({ keyword, normalized: item.normalized }))
+            );
+            this.fuzzySearcher = new Fuse(allKeywords, {
+                keys: ['keyword'],
+                threshold: 0.3, // 유사도 임계값 (0: 정확히 매칭, 1: 모든 것 매칭)
+                distance: 100,
+                includeScore: true
+            });
+        }
+    }
+
+    // 퍼지 매칭을 통한 키워드 정규화
+    normalizeKeyword(input) {
+        if (!input || input.length < 2) return null;
+
+        const lowerInput = input.toLowerCase();
+
+        // 1. 직접 매칭 시도
+        for (const item of this.keywordNormalizations) {
+            if (item.keywords.some(k => k.toLowerCase() === lowerInput)) {
+                return item.normalized;
+            }
+        }
+
+        // 2. Fuse.js 퍼지 매칭 시도
+        if (this.fuzzySearcher) {
+            const results = this.fuzzySearcher.search(lowerInput);
+            if (results.length > 0 && results[0].score < 0.4) {
+                return results[0].item.normalized;
+            }
+        }
+
+        // 3. 부분 문자열 매칭 시도
+        for (const item of this.keywordNormalizations) {
+            if (item.keywords.some(k => lowerInput.includes(k.toLowerCase()) || k.toLowerCase().includes(lowerInput))) {
+                return item.normalized;
+            }
+        }
+
+        return null;
+    }
+
+    // 쿼리에서 키워드 추출 및 정규화
+    extractNormalizedKeywords(query) {
+        const words = query.toLowerCase().split(/\s+/);
+        const normalized = new Set();
+
+        for (const word of words) {
+            const norm = this.normalizeKeyword(word);
+            if (norm) {
+                normalized.add(norm);
+            }
+        }
+
+        // 복합어 처리 (예: "시피유 사용량", "메모리 부족")
+        const compoundPatterns = [
+            { pattern: /(cpu|씨피유|시피유).*(높|사용|과부하)/i, normalized: ['cpu', 'high'] },
+            { pattern: /(memory|메모리|램).*(부족|높|사용)/i, normalized: ['memory', 'high'] },
+            { pattern: /(disk|디스크).*(부족|꽉|높)/i, normalized: ['disk', 'low'] },
+            { pattern: /(네트워크|network).*(오류|에러|문제)/i, normalized: ['network', 'error'] },
+            { pattern: /(서비스|service).*(중단|중지|stop)/i, normalized: ['service', 'error'] },
+            { pattern: /(좀비|zombie).*(프로세스|process)/i, normalized: ['zombie'] },
+            { pattern: /(지역|region).*(별|상태)/i, normalized: ['region', 'status'] },
+            { pattern: /(24시간|추이|trend)/i, normalized: ['trend'] }
+        ];
+
+        for (const { pattern, normalized: norms } of compoundPatterns) {
+            if (pattern.test(query)) {
+                norms.forEach(n => normalized.add(n));
+            }
+        }
+
+        return Array.from(normalized);
     }
 
     setupDataListener() {
@@ -212,24 +490,156 @@ class AIProcessor {
                 return '서버 데이터를 불러오는 중입니다. 잠시 후 다시 시도해주세요.';
             }
 
+            // 후속 질문 처리
+            if (this.conversationManager.isFollowUp(query)) {
+                const followUpResult = this.handleFollowUpQuery(query);
+                if (followUpResult) {
+                    // 결과를 대화 이력에 저장
+                    this.conversationManager.addToHistory(query, followUpResult, {
+                        isFollowUp: true
+                    });
+                    return followUpResult;
+                }
+            }
+
             // 쿼리 분석
             const analysis = this.analyzeQuery(query);
 
             // 결과 생성
+            let result;
+            let context = { serverList: [] };
+
             if (analysis.requestType === 'problem_analysis') {
-                return this.generateProblemAnalysis();
+                result = this.generateProblemAnalysis();
             } else if (analysis.requestType === 'solution') {
-                return this.generateSolutions(analysis.target);
+                result = this.generateSolutions(analysis.target);
             } else if (analysis.requestType === 'report') {
-                return this.generateReportDownloadLink(analysis.reportType);
+                result = this.generateReportDownloadLink(analysis.reportType);
             } else {
                 // 일반 질의 처리
-                return this.generateDataResponse(analysis);
+                result = this.generateDataResponse(analysis);
+
+                // 컨텍스트에 관련 서버 목록 저장 (후속 질문용)
+                if (analysis.metric) {
+                    context.serverList = this.getServersForContext(analysis);
+                    context.metric = analysis.metric;
+                }
             }
+
+            // 결과를 대화 이력에 저장
+            this.conversationManager.addToHistory(query, result, context);
+
+            return result;
         } catch (error) {
             console.error('[AIProcessor] 쿼리 처리 중 오류:', error);
             return `쿼리 처리 중 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`;
         }
+    }
+
+    // 후속 질문 처리
+    handleFollowUpQuery(query) {
+        const lastQuery = this.conversationManager.getLastQuery();
+        if (!lastQuery || !lastQuery.context) {
+            return null;
+        }
+
+        const filters = this.conversationManager.extractFollowUpFilter(query);
+
+        // 이전 결과의 서버 목록에서 필터링
+        let previousServers = lastQuery.context.serverList || [];
+
+        // 서버 데이터가 없으면 현재 서버 데이터에서 필터링
+        if (previousServers.length === 0) {
+            previousServers = this.serverData.map(server => ({
+                hostname: server.hostname,
+                status: this.getEffectiveServerStatus(server),
+                cpu_usage: server.cpu_usage,
+                memory_usage_percent: server.memory_usage_percent,
+                disk_usage_percent: server.disk?.[0]?.disk_usage_percent || 0
+            }));
+        }
+
+        let filteredServers = previousServers;
+
+        // 서버 타입 필터 적용
+        if (filters.serverType) {
+            filteredServers = filteredServers.filter(server =>
+                server.hostname && server.hostname.toLowerCase().includes(filters.serverType)
+            );
+        }
+
+        // 상태 필터 적용
+        if (filters.status) {
+            filteredServers = filteredServers.filter(server =>
+                server.status === filters.status
+            );
+        }
+
+        if (filteredServers.length === 0) {
+            return `### 후속 질문 결과
+
+이전 결과에서 조건에 맞는 서버를 찾을 수 없습니다.
+
+- 적용된 필터: ${filters.serverType ? `서버 타입(${filters.serverType})` : ''} ${filters.status ? `상태(${filters.status})` : ''}
+- 이전 결과 서버 수: ${previousServers.length}대
+
+다른 조건으로 다시 질문해 주세요.`;
+        }
+
+        // 필터링 결과 응답 생성
+        let response = `### 후속 질문 결과
+
+이전 결과에서 필터링된 서버 목록입니다.
+
+`;
+        if (filters.serverType) {
+            response += `**필터 조건**: ${filters.serverType.toUpperCase()} 서버\n`;
+        }
+        if (filters.status) {
+            const statusName = { critical: '심각', warning: '경고', normal: '정상' };
+            response += `**상태 필터**: ${statusName[filters.status] || filters.status}\n`;
+        }
+
+        response += `**결과**: ${filteredServers.length}대\n\n`;
+
+        filteredServers.forEach(server => {
+            const statusEmoji = {
+                critical: '🔴',
+                warning: '⚠️',
+                normal: '✅'
+            };
+            response += `- **${server.hostname}** ${statusEmoji[server.status] || ''}\n`;
+            response += `  - CPU: ${server.cpu_usage?.toFixed(1) || 0}%, 메모리: ${server.memory_usage_percent?.toFixed(1) || 0}%\n`;
+        });
+
+        return response;
+    }
+
+    // 컨텍스트용 서버 목록 가져오기
+    getServersForContext(analysis) {
+        let servers = this.serverData;
+
+        // 메트릭에 따른 필터링
+        if (analysis.metric === 'cpu') {
+            servers = servers.filter(s => s.cpu_usage >= (analysis.threshold || 70));
+        } else if (analysis.metric === 'memory') {
+            servers = servers.filter(s => s.memory_usage_percent >= (analysis.threshold || 70));
+        } else if (analysis.metric === 'disk') {
+            servers = servers.filter(s => (s.disk?.[0]?.disk_usage_percent || 0) >= (analysis.threshold || 70));
+        }
+
+        // 서버 타입 필터링
+        if (analysis.serverType) {
+            servers = servers.filter(s => s.hostname.toLowerCase().includes(analysis.serverType));
+        }
+
+        return servers.map(server => ({
+            hostname: server.hostname,
+            status: this.getEffectiveServerStatus(server),
+            cpu_usage: server.cpu_usage,
+            memory_usage_percent: server.memory_usage_percent,
+            disk_usage_percent: server.disk?.[0]?.disk_usage_percent || 0
+        }));
     }
 
     analyzeQuery(query) {
@@ -246,7 +656,13 @@ class AIProcessor {
 
         // 소문자 변환 및 공백 표준화
         const normalizedQuery = query.toLowerCase().replace(/\s+/g, ' ');
-        
+
+        // 퍼지 매칭을 통한 정규화된 키워드 추출
+        const fuzzyKeywords = this.extractNormalizedKeywords(query);
+
+        // 퍼지 매칭 결과를 활용한 키워드 매칭 확장 함수
+        const hasFuzzyKeyword = (keyword) => fuzzyKeywords.includes(keyword);
+
         // 키워드별 매칭 사전 (확장성을 위해 키워드 목록을 분리)
         const keywordMappings = {
             // 메트릭 관련 키워드
@@ -289,8 +705,12 @@ class AIProcessor {
             list: ['list', 'show', 'display', '목록', '보여줘', '나열', '표시']
         };
         
-        // 키워드 매칭 함수
+        // 키워드 매칭 함수 (퍼지 매칭 포함)
         const matchesKeyword = (text, keywordType) => {
+            // 1. 퍼지 매칭 결과 확인
+            if (hasFuzzyKeyword(keywordType)) return true;
+
+            // 2. 기존 키워드 매핑 확인
             if (!keywordMappings[keywordType]) return false;
             return keywordMappings[keywordType].some(keyword => text.includes(keyword));
         };

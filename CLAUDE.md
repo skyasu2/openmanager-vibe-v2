@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+**응답 언어: 한국어로 답변. 기술 용어는 영어 허용.**
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview

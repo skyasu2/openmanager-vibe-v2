@@ -2190,7 +2190,298 @@ CPU 사용률이 높은 서버가 ${highCpuServers.length}대 발견되었습니
             
             return response;
         }
-        
+
+        // 네트워크 오류 분석 쿼리
+        else if (query.includes("네트워크 오류")) {
+            const networkErrorServers = this.serverData.filter(server =>
+                server.net && (server.net.rx_errors > 0 || server.net.tx_errors > 0)
+            );
+
+            if (networkErrorServers.length === 0) {
+                return `### 네트워크 오류 분석 결과
+
+현재 네트워크 오류가 발생한 서버가 없습니다. 모든 서버의 네트워크 연결이 정상입니다.
+
+**총 서버 수**: ${this.serverData.length}대
+
+모든 서버에서 네트워크 오류가 감지되지 않았습니다.`;
+            }
+
+            // 오류가 많은 순으로 정렬
+            networkErrorServers.sort((a, b) => {
+                const errorsA = (a.net?.rx_errors || 0) + (a.net?.tx_errors || 0);
+                const errorsB = (b.net?.rx_errors || 0) + (b.net?.tx_errors || 0);
+                return errorsB - errorsA;
+            });
+
+            let response = `### 네트워크 오류 분석 결과
+
+네트워크 오류가 발생한 서버가 ${networkErrorServers.length}대 발견되었습니다.
+
+#### 네트워크 오류 서버 목록
+`;
+
+            networkErrorServers.slice(0, 10).forEach(server => {
+                const totalErrors = (server.net?.rx_errors || 0) + (server.net?.tx_errors || 0);
+                const severity = totalErrors > 50 ? '심각' : totalErrors > 20 ? '경고' : '주의';
+                response += `- **${server.hostname}**: 총 ${totalErrors}건 오류 (${severity})
+  - 수신 오류: ${server.net?.rx_errors || 0}건
+  - 송신 오류: ${server.net?.tx_errors || 0}건
+  - 인터페이스: ${server.net?.interface || 'eth0'}
+`;
+            });
+
+            response += `
+### 원인 분석 및 조치 방안
+
+1. **네트워크 오류 원인**: 네트워크 인터페이스 문제, 케이블 불량, 스위치/라우터 문제, 또는 네트워크 혼잡이 원인일 수 있습니다.
+   - 권장 조치: 'ethtool <interface>', 'ip -s link show' 명령어로 인터페이스 상태를 확인하세요.
+
+2. **드라이버 문제**: 네트워크 드라이버 이슈로 인해 패킷 손실이 발생할 수 있습니다.
+   - 권장 조치: 'dmesg | grep -i network' 명령어로 드라이버 관련 오류를 확인하세요.
+`;
+            return response;
+        }
+
+        // 좀비 프로세스 확인 쿼리
+        else if (query.includes("좀비 프로세스")) {
+            const zombieServers = this.serverData.filter(server =>
+                server.zombie_count && server.zombie_count > 0
+            );
+
+            if (zombieServers.length === 0) {
+                return `### 좀비 프로세스 분석 결과
+
+현재 좀비 프로세스가 있는 서버가 없습니다. 모든 서버의 프로세스가 정상입니다.
+
+**총 서버 수**: ${this.serverData.length}대
+
+모든 서버에서 좀비 프로세스가 감지되지 않았습니다.`;
+            }
+
+            // 좀비 프로세스가 많은 순으로 정렬
+            zombieServers.sort((a, b) => (b.zombie_count || 0) - (a.zombie_count || 0));
+
+            let response = `### 좀비 프로세스 분석 결과
+
+좀비 프로세스가 있는 서버가 ${zombieServers.length}대 발견되었습니다.
+
+#### 좀비 프로세스 서버 목록
+`;
+
+            zombieServers.forEach(server => {
+                const severity = server.zombie_count > 10 ? '심각' : server.zombie_count > 5 ? '경고' : '주의';
+                response += `- **${server.hostname}**: 좀비 프로세스 ${server.zombie_count}개 (${severity})
+  - 총 프로세스 수: ${server.process_count || '정보 없음'}
+  - 부하 평균: ${server.load_avg_1m || '정보 없음'}
+`;
+            });
+
+            response += `
+### 원인 분석 및 조치 방안
+
+1. **좀비 프로세스 원인**: 부모 프로세스가 자식 프로세스의 종료 상태를 수집하지 않아 발생합니다.
+   - 권장 조치: 'ps aux | grep Z' 명령어로 좀비 프로세스를 확인하세요.
+
+2. **해결 방법**: 부모 프로세스를 재시작하거나, 부모 프로세스가 없으면 init이 정리합니다.
+   - 권장 조치: 'kill -SIGCHLD <parent_pid>' 또는 부모 프로세스 재시작을 고려하세요.
+`;
+            return response;
+        }
+
+        // 서버 유형별 상태 쿼리
+        else if (query.includes("서버 유형별 상태") || query.includes("웹 서버 상태") ||
+                 query.includes("DB 서버 상태") || query.includes("API 서버 상태") ||
+                 query.includes("캐시 서버 상태")) {
+
+            // 서버 유형 분류
+            const serverTypes = {
+                web: this.serverData.filter(s => s.hostname.includes('web')),
+                db: this.serverData.filter(s => s.hostname.includes('db')),
+                api: this.serverData.filter(s => s.hostname.includes('api')),
+                cache: this.serverData.filter(s => s.hostname.includes('cache') || s.hostname.includes('redis')),
+                app: this.serverData.filter(s => s.hostname.includes('app')),
+                other: this.serverData.filter(s =>
+                    !s.hostname.includes('web') &&
+                    !s.hostname.includes('db') &&
+                    !s.hostname.includes('api') &&
+                    !s.hostname.includes('cache') &&
+                    !s.hostname.includes('redis') &&
+                    !s.hostname.includes('app')
+                )
+            };
+
+            // 특정 타입 요청 확인
+            let targetType = null;
+            if (query.includes("웹 서버")) targetType = 'web';
+            else if (query.includes("DB 서버")) targetType = 'db';
+            else if (query.includes("API 서버")) targetType = 'api';
+            else if (query.includes("캐시 서버")) targetType = 'cache';
+
+            if (targetType && serverTypes[targetType]) {
+                const servers = serverTypes[targetType];
+                if (servers.length === 0) {
+                    return `### ${targetType.toUpperCase()} 서버 상태
+
+현재 ${targetType.toUpperCase()} 유형의 서버가 없습니다.`;
+                }
+
+                let response = `### ${targetType.toUpperCase()} 서버 상태 (${servers.length}대)
+
+`;
+                servers.forEach(server => {
+                    const status = this.getServerStatus(server);
+                    const statusLabel = this.getStatusLabel(status);
+                    response += `- **${server.hostname}**: ${statusLabel}
+  - CPU: ${server.cpu_usage}%, 메모리: ${server.memory_usage_percent}%
+  - 디스크: ${server.disk?.[0]?.disk_usage_percent || 0}%
+`;
+                });
+                return response;
+            }
+
+            // 전체 유형별 요약
+            let response = `### 서버 유형별 상태 요약
+
+**총 서버 수**: ${this.serverData.length}대
+
+`;
+            const typeNames = { web: '웹 서버', db: 'DB 서버', api: 'API 서버', cache: '캐시 서버', app: '앱 서버', other: '기타' };
+
+            Object.entries(serverTypes).forEach(([type, servers]) => {
+                if (servers.length > 0) {
+                    const critical = servers.filter(s => this.getServerStatus(s) === 'critical').length;
+                    const warning = servers.filter(s => this.getServerStatus(s) === 'warning').length;
+                    const normal = servers.filter(s => this.getServerStatus(s) === 'normal').length;
+                    const avgCpu = (servers.reduce((sum, s) => sum + s.cpu_usage, 0) / servers.length).toFixed(1);
+                    const avgMem = (servers.reduce((sum, s) => sum + s.memory_usage_percent, 0) / servers.length).toFixed(1);
+
+                    response += `#### ${typeNames[type]} (${servers.length}대)
+- 상태: 정상 ${normal}대, 경고 ${warning}대, 심각 ${critical}대
+- 평균 CPU: ${avgCpu}%, 평균 메모리: ${avgMem}%
+
+`;
+                }
+            });
+
+            return response;
+        }
+
+        // 지역별 서버 상태 쿼리
+        else if (query.includes("지역별 서버 상태")) {
+            // 지역 분류 (hostname에서 지역 코드 추출)
+            const regions = {};
+            const regionNames = {
+                'kr': '한국', 'us': '미국', 'jp': '일본', 'sg': '싱가포르',
+                'eu': '유럽', 'cn': '중국', 'ap': '아시아태평양'
+            };
+
+            this.serverData.forEach(server => {
+                // hostname에서 지역 코드 추출 (예: web-01-kr → kr)
+                const parts = server.hostname.split('-');
+                let region = 'other';
+                for (const part of parts) {
+                    if (regionNames[part.toLowerCase()]) {
+                        region = part.toLowerCase();
+                        break;
+                    }
+                }
+                if (!regions[region]) regions[region] = [];
+                regions[region].push(server);
+            });
+
+            let response = `### 지역별 서버 상태 분석
+
+**총 서버 수**: ${this.serverData.length}대
+
+`;
+
+            Object.entries(regions).forEach(([region, servers]) => {
+                const regionName = regionNames[region] || '기타 지역';
+                const critical = servers.filter(s => this.getServerStatus(s) === 'critical').length;
+                const warning = servers.filter(s => this.getServerStatus(s) === 'warning').length;
+                const normal = servers.filter(s => this.getServerStatus(s) === 'normal').length;
+                const avgCpu = (servers.reduce((sum, s) => sum + s.cpu_usage, 0) / servers.length).toFixed(1);
+
+                response += `#### ${regionName} (${servers.length}대)
+- 상태: 정상 ${normal}대, 경고 ${warning}대, 심각 ${critical}대
+- 평균 CPU: ${avgCpu}%
+`;
+                if (critical > 0) {
+                    response += `- ⚠️ 심각한 서버: ${servers.filter(s => this.getServerStatus(s) === 'critical').map(s => s.hostname).join(', ')}
+`;
+                }
+                response += '\n';
+            });
+
+            return response;
+        }
+
+        // 24시간 추이 분석 쿼리
+        else if (query.includes("24시간 추이") || query.includes("24시간 리소스 추이")) {
+            // AIProcessor의 historicalData 활용
+            const historicalData = this.aiProcessor?.historicalData || {};
+
+            if (Object.keys(historicalData).length === 0) {
+                return `### 24시간 리소스 추이 분석
+
+현재 수집된 이력 데이터가 없습니다. 데이터는 10분마다 수집되며, 시간이 지나면 추이 분석이 가능해집니다.
+
+**현재 서버 상태 요약**:
+- 총 서버 수: ${this.serverData.length}대
+- 평균 CPU: ${(this.serverData.reduce((sum, s) => sum + s.cpu_usage, 0) / this.serverData.length).toFixed(1)}%
+- 평균 메모리: ${(this.serverData.reduce((sum, s) => sum + s.memory_usage_percent, 0) / this.serverData.length).toFixed(1)}%`;
+            }
+
+            let response = `### 24시간 리소스 추이 분석
+
+`;
+            // 전체 서버의 현재 평균 계산
+            const avgCpu = (this.serverData.reduce((sum, s) => sum + s.cpu_usage, 0) / this.serverData.length).toFixed(1);
+            const avgMem = (this.serverData.reduce((sum, s) => sum + s.memory_usage_percent, 0) / this.serverData.length).toFixed(1);
+            const avgDisk = (this.serverData.reduce((sum, s) => sum + (s.disk?.[0]?.disk_usage_percent || 0), 0) / this.serverData.length).toFixed(1);
+
+            response += `#### 현재 평균 리소스 사용률
+- CPU: ${avgCpu}%
+- 메모리: ${avgMem}%
+- 디스크: ${avgDisk}%
+
+#### 리소스 사용률 추이 (최근 데이터)
+`;
+
+            // 이력 데이터가 있는 서버들의 추이 분석
+            let trendCount = 0;
+            Object.entries(historicalData).slice(0, 5).forEach(([hostname, history]) => {
+                if (history.length >= 2) {
+                    const latest = history[history.length - 1];
+                    const previous = history[Math.max(0, history.length - 6)]; // 약 1시간 전 데이터
+
+                    const cpuTrend = latest.cpu_usage - previous.cpu_usage;
+                    const memTrend = latest.memory_usage_percent - previous.memory_usage_percent;
+
+                    const cpuArrow = cpuTrend > 5 ? '📈' : cpuTrend < -5 ? '📉' : '➡️';
+                    const memArrow = memTrend > 5 ? '📈' : memTrend < -5 ? '📉' : '➡️';
+
+                    response += `- **${hostname}**: CPU ${cpuArrow} (${cpuTrend > 0 ? '+' : ''}${cpuTrend.toFixed(1)}%), 메모리 ${memArrow} (${memTrend > 0 ? '+' : ''}${memTrend.toFixed(1)}%)
+`;
+                    trendCount++;
+                }
+            });
+
+            if (trendCount === 0) {
+                response += `아직 충분한 이력 데이터가 수집되지 않았습니다.
+`;
+            }
+
+            response += `
+#### 권장 사항
+- 리소스 사용률이 지속적으로 증가하는 서버는 스케일업 또는 최적화가 필요할 수 있습니다.
+- 서버 상세 페이지에서 개별 서버의 24시간 그래프를 확인할 수 있습니다.
+`;
+
+            return response;
+        }
+
         // 기본 AI 프로세서 호출
         return this.aiProcessor.processQuery(query);
     }
@@ -2216,15 +2507,25 @@ CPU 사용률이 높은 서버가 ${highCpuServers.length}대 발견되었습니
         if (queryResultElement) queryResultElement.style.display = 'none';
         
         // 프리셋 기반 응답 처리 (자체 처리)
-        const isPresetQuery = 
-            query.includes("CPU 사용률이 높은 서버") || 
+        const isPresetQuery =
+            query.includes("CPU 사용률이 높은 서버") ||
             query.includes("CPU 과부하") ||
-            query.includes("메모리 사용량이 많은 서버") || 
+            query.includes("메모리 사용량이 많은 서버") ||
             query.includes("메모리 부족") ||
-            query.includes("서비스가 중단된 서버") || 
+            query.includes("서비스가 중단된 서버") ||
             query.includes("디스크 공간이 부족한 서버") ||
             query.includes("정상 작동 중인 서버 목록") ||
-            query.includes("전체 서버 상태 요약");
+            query.includes("전체 서버 상태 요약") ||
+            query.includes("네트워크 오류") ||
+            query.includes("좀비 프로세스") ||
+            query.includes("서버 유형별 상태") ||
+            query.includes("웹 서버 상태") ||
+            query.includes("DB 서버 상태") ||
+            query.includes("API 서버 상태") ||
+            query.includes("캐시 서버 상태") ||
+            query.includes("지역별 서버 상태") ||
+            query.includes("24시간 추이") ||
+            query.includes("24시간 리소스 추이");
         
         if (isPresetQuery) {
             const result = this.processPresetQuery(query);

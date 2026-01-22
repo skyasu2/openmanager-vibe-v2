@@ -44,6 +44,13 @@ const AppSettings = {
         maxHistoryPoints: 144      // 서버별 이력 데이터 최대 개수
     },
 
+    // 대화 컨텍스트 메모리 설정
+    conversation: {
+        maxHistorySize: 10,        // 대화 이력 최대 개수
+        enableFuzzySearch: true,   // 퍼지 검색 활성화
+        fuzzyThreshold: 0.3        // 퍼지 매칭 임계값 (0: 정확, 1: 느슨)
+    },
+
     // 장애 감지 임계값
     failureDetection: {
         highCpu: 90,
