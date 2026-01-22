@@ -138,8 +138,7 @@ class DummyDataGenerator {
     
     // 초기 서버 배치 데이터 생성 (빠른 로딩을 위해 일부만 생성)
     generateInitialBatch() {
-        console.log(`초기 서버 데이터 ${this.initialBatchSize}개 생성 중...`);
-        
+                
         // 서버 구성에 맞게 배포
         this.serverData = [];
         let serverIndex = 0;
@@ -310,14 +309,12 @@ class DummyDataGenerator {
             const remainingCount = this.serverCount - this.generatedCount;
             
             if (remainingCount <= 0) {
-                console.log(`모든 서버 데이터 ${this.serverCount}개 생성 완료`);
-                this.isGenerating = false;
+                                this.isGenerating = false;
                 return;
             }
             
             const batchCount = Math.min(batchSize, remainingCount);
-            console.log(`서버 데이터 생성 중... (${this.generatedCount}/${this.serverCount})`);
-            
+                        
             // 배치 생성
             const newServers = [];
             for (let i = 0; i < batchCount; i++) {
@@ -359,12 +356,10 @@ class DummyDataGenerator {
         
         // 모든 데이터가 생성되지 않았으면 업데이트 스킵
         if (this.isGenerating) {
-            console.log("아직 모든 서버 데이터가 생성되지 않았습니다. 업데이트 스킵");
-            return;
+                        return;
         }
         
-        console.log(`서버 데이터 업데이트 중... (${this.serverData.length}개)`);
-        
+                
         // 현재 시간대의 가중치 계산
         const timeWeightMultiplier = this.timePatterns.dailyPattern[this.currentHour] / 100;
         

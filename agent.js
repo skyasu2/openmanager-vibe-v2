@@ -44,11 +44,9 @@ class Agent {
         this.clearOldIncidents();
 
         if (!currentServerData || currentServerData.length === 0) {
-            console.warn("[Agent] 확인할 서버 데이터가 없습니다.");
-            return null; // 감지된 장애 없음
+            return null;
         }
         this.lastCheckTimestamp = new Date();
-        console.log(`[Agent] 서버 데이터 확인 시작: ${this.lastCheckTimestamp.toLocaleString()}`);
 
         const newIncidents = [];
 
@@ -84,12 +82,10 @@ class Agent {
 
         if (newIncidents.length > 0) {
             this.detectedIncidents = this.detectedIncidents.concat(newIncidents);
-            this.incidentHistory = newIncidents.concat(this.incidentHistory).slice(0, this.maxHistory); // 최신 이력 관리
-            console.log(`[Agent] ${newIncidents.length}개의 신규 장애 감지됨.`, newIncidents);
-            return newIncidents; // 새로 감지된 장애 보고서 반환
+            this.incidentHistory = newIncidents.concat(this.incidentHistory).slice(0, this.maxHistory);
+            return newIncidents;
         }
-        
-        console.log("[Agent] 신규 감지된 장애 없음.");
+
         return null;
     }
 

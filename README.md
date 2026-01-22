@@ -27,7 +27,6 @@ openmanager-vibe-v2/
 ├── ai_processor.js         # AI 자연어 분석 엔진
 ├── agent.js                # 자동 장애 감지 에이전트
 ├── dummy_data_generator.js # 더미 서버 데이터 생성
-├── summary.js              # 데이터 요약 기능
 ├── css/
 │   ├── style.css           # 기본 스타일
 │   └── modern-style.css    # 모던 대시보드 스타일

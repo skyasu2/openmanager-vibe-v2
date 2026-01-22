@@ -28,24 +28,20 @@ class DataProcessor {
             this.problemsPerPage = 5; // 페이지당, 처음에 표시될 문제 수
             
             // 초기화 로깅
-            console.log('DataProcessor 초기화 시작...');
             
             // AIProcessor 인스턴스 초기화 개선
             if (window.aiProcessor) {
                 this.aiProcessor = window.aiProcessor;
-                console.log('기존 AIProcessor 인스턴스를 사용합니다.');
             } else if (typeof AIProcessor === 'function') {
                 // AIProcessor 클래스가 존재하면 인스턴스 생성
                 try {
                     window.aiProcessor = new AIProcessor();
                     this.aiProcessor = window.aiProcessor;
-                    console.log("AIProcessor 인스턴스를 새로 생성했습니다.");
                 } catch (e) {
                     console.error("AIProcessor 인스턴스 생성 중 오류 발생:", e);
                     this.aiProcessor = null;
                 }
             } else {
-                console.warn("AIProcessor 클래스를 찾을 수 없습니다. 기본 상태 판단 로직을 사용합니다.");
                 this.aiProcessor = null;
             }
             
@@ -61,9 +57,7 @@ class DataProcessor {
             // 이벤트 리스너 등록
             if (this.hasRequiredElements()) {
                 this.registerEventListeners();
-                console.log('이벤트 리스너가 등록되었습니다.');
             } else {
-                console.warn('일부 UI 요소를 찾을 수 없어 이벤트 리스너 등록이 제한됩니다.');
             }
             
             // 자동 데이터 업데이트 (1분 간격)
@@ -75,7 +69,6 @@ class DataProcessor {
             // 서버 상태 판단 통합 로직을 전역 함수로 등록
             window.getServerStatus = (server) => this.getServerStatus(server);
             
-            console.log('DataProcessor 초기화 완료.');
         } catch (error) {
             console.error('DataProcessor 초기화 중 심각한 오류 발생:', error);
             
@@ -141,7 +134,6 @@ class DataProcessor {
             if (!this.refreshButton) missingElements.push('refreshBtn');
             
             if (missingElements.length > 0) {
-                console.warn(`다음 UI 요소를 찾을 수 없습니다: ${missingElements.join(', ')}`);
             }
         } catch (error) {
             console.error('UI 요소 참조 중 오류:', error);
@@ -224,12 +216,6 @@ class DataProcessor {
             aiQuerySubmitButton.addEventListener('click', () => this.processAIQuery());
         }
         
-        // 장애 보고서 다운로드 이벤트
-        const downloadReportButton = document.getElementById('downloadAllReportsBtn');
-        if (downloadReportButton) {
-            downloadReportButton.addEventListener('click', () => this.downloadErrorReport());
-        }
-        
         // 전체 문제 보기 버튼 이벤트 처리
         const viewAllProblemsBtn = document.getElementById('viewAllProblemsBtn');
         if (viewAllProblemsBtn) {
@@ -297,7 +283,6 @@ class DataProcessor {
                     queryInput.value = '';
                 }
                 
-                console.log('AI 분석 결과가 닫혔습니다.');
             });
         }
     }
@@ -333,7 +318,6 @@ class DataProcessor {
     
     // 백업 데이터 생성 함수
     createBackupData() {
-        console.log('백업 데이터 생성 시도...');
         
         try {
             // 1. generateDummyData 함수 검사 및 호출
@@ -346,7 +330,6 @@ class DataProcessor {
             }
             
             // 2. generateDummyData가 없거나 실패한 경우 직접 더미 데이터 생성
-            console.log('기본 더미 데이터 생성...');
             const backupServers = [];
             
             // 기본 더미 서버 10대 생성
@@ -611,7 +594,6 @@ class DataProcessor {
         // 페이지 재로드가 아닌 데이터만 새로 생성
         if (typeof generateDummyData === 'function') {
             try {
-                console.log('더미 데이터 다시 생성...');
                 window.serverData = generateDummyData(10); // 30개에서 10개로 줄임
                 
                 // 데이터 업데이트 이벤트 발생시키기
@@ -1419,7 +1401,6 @@ class DataProcessor {
             if (typeof this.aiProcessor.detectProblems === 'function') {
                 problems = this.aiProcessor.detectProblems();
             } else {
-                console.warn("AI 프로세서에 detectProblems 메소드가 없습니다. 기본 문제 감지 로직을 사용합니다.");
                 // 기본 문제 감지 로직: 리소스 사용량이 높은 서버 감지
                 problems = this.serverData.filter(server => {
                     const status = this.getServerStatus(server);
@@ -1444,7 +1425,6 @@ class DataProcessor {
             
             // 결과가 배열이 아니거나 undefined인 경우 빈 배열로 처리
             if (!Array.isArray(problems)) {
-                console.warn("detectProblems() 함수가 배열을 반환하지 않았습니다.");
                 problems = [];
             }
             
@@ -1807,7 +1787,6 @@ class DataProcessor {
             try {
                 aiProblemsData = this.aiProcessor.detectProblems();
             } catch (err) {
-                console.warn("AI 문제 데이터를 가져오는 중 오류 발생:", err);
             }
         }
         
@@ -2332,7 +2311,6 @@ CPU 사용률이 높은 서버가 ${highCpuServers.length}대 발견되었습니
             if (typeof this.aiProcessor.generateErrorReport === 'function') {
                 report = this.aiProcessor.generateErrorReport();
             } else {
-                console.warn("AI 프로세서에 generateErrorReport 메소드가 없습니다. 기본 보고서를 생성합니다.");
                 
                 // 기본 장애 보고서 생성 로직
                 report = '# 서버 상태 보고서\n\n';
@@ -2410,7 +2388,6 @@ CPU 사용률이 높은 서버가 ${highCpuServers.length}대 발견되었습니
             }
         } else if (!this._hasLoggedNoAIProcessor) {
             // 경고 메시지를 한 번만 출력
-            console.warn("AIProcessor 또는 getEffectiveServerStatus가 없어 기본 상태 판단 로직을 사용합니다.");
             this._hasLoggedNoAIProcessor = true;
         }
         
@@ -2523,14 +2500,12 @@ CPU 사용률이 높은 서버가 ${highCpuServers.length}대 발견되었습니
             if (typeof this.aiProcessor.detectProblems === 'function') {
                 problems = this.aiProcessor.detectProblems();
             } else {
-                console.warn("AI 프로세서에 detectProblems 메소드가 없습니다.");
                 alert('문제 목록을 불러올 수 없습니다.');
                 return;
             }
             
             // 결과가 배열이 아니거나 undefined인 경우 빈 배열로 처리
             if (!Array.isArray(problems)) {
-                console.warn("detectProblems() 함수가 배열을 반환하지 않았습니다.");
                 problems = [];
             }
             

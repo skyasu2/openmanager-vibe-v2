@@ -898,7 +898,6 @@ class AIProcessor {
 
     detectProblems() {
         if (!this.serverData || this.serverData.length === 0) {
-            console.warn('서버 데이터가 없어 문제를 감지할 수 없습니다.');
             return [];
         }
         
@@ -1240,10 +1239,7 @@ class AIProcessor {
 // 전역 함수로 항상 노출
 window.processQuery = async function(query) {
     if (!window.aiProcessor) {
-        // AIProcessor 인스턴스 없으면 생성
-        console.log("Creating global AIProcessor instance");
         window.aiProcessor = new AIProcessor();
-        // 데이터 초기화 대기
         await new Promise(resolve => setTimeout(resolve, 200));
     }
     return await window.aiProcessor.processQuery(query);
@@ -1252,7 +1248,6 @@ window.processQuery = async function(query) {
 // 페이지 로드 시 즉시 AIProcessor 인스턴스 생성
 document.addEventListener('DOMContentLoaded', function() {
     if (!window.aiProcessor) {
-        console.log("Initializing AIProcessor on page load");
         window.aiProcessor = new AIProcessor();
     }
 }); 
