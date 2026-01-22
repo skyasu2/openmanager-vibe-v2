@@ -37,6 +37,9 @@ class Agent {
      * @param {Array} currentServerData 현재 서버 데이터 배열
      */
     async checkServersAndReport(currentServerData) {
+        // 오래된 인시던트 정리 (메모리 누수 방지)
+        this.clearOldIncidents();
+
         if (!currentServerData || currentServerData.length === 0) {
             console.warn("[Agent] 확인할 서버 데이터가 없습니다.");
             return null; // 감지된 장애 없음

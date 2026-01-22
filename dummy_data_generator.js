@@ -26,6 +26,7 @@ class DummyDataGenerator {
         this.criticalErrorProb = 0.01;    // "Critical" 오류 메시지 발생 확률 (줄임)
         this.warningErrorProb = 0.03;     // "Error" 또는 "Warning" 오류 메시지 발생 확률 (줄임)
         this.serviceStoppedProb = 0.01;   // 서비스 중단 발생 확률 (줄임)
+        this.errorProbability = 0.1;     // 네트워크 오류 발생 확률
         
         // 서버 구성 정보
         this.serverConfigurations = [
@@ -146,11 +147,14 @@ class DummyDataGenerator {
             const server = this.createServerByConfiguration(serverIndex);
             this.serverData.push(server);
             
-            // 이력 데이터 초기화
+            // 이력 데이터 초기화 (메모리 누수 방지)
             if (!this.historicalData[server.hostname]) {
                 this.historicalData[server.hostname] = [];
             }
             this.historicalData[server.hostname].push({...server, timestamp: new Date().toISOString()});
+            if (this.historicalData[server.hostname].length > this.maxHistoricalPoints) {
+                this.historicalData[server.hostname].shift();
+            }
             
             serverIndex++;
         }
@@ -214,7 +218,8 @@ class DummyDataGenerator {
         const memory_usage_percent = parseFloat(Math.min(Math.max(Math.floor(memoryBase * timeWeightMultiplier) + this.getRandomInt(-10, 10), 5), 98).toFixed(2));
         const disk_info = [{
             mount: '/data',
-            total: '100GB', // 예시 값
+            total: '100GB', // 예시 값 (표시용)
+            disk_total: 100 * 1024 * 1024 * 1024, // 계산용 (바이트)
             used: '0GB',    // 아래에서 계산
             available: '0GB', // 아래에서 계산
             disk_usage_percent: parseFloat(Math.min(Math.max(Math.floor(diskBase * timeWeightMultiplier) + this.getRandomInt(-5, 5), 5), 98).toFixed(2))
@@ -264,7 +269,8 @@ class DummyDataGenerator {
             ip: `10.${index % 25}.${Math.floor(index / 25)}.${(index % 50) + 10}`,
             os: this.getRandomItem(this.osTypes),
             cpu_usage: cpu_usage,
-            memory_total: '16GB', // 예시
+            memory_total: '16GB', // 예시 (표시용)
+            memory_total_bytes: 16 * 1024 * 1024 * 1024, // 계산용 (바이트)
             memory_usage_percent: memory_usage_percent,
             memory_free: `${(100 - memory_usage_percent) / 100 * 16}GB`, // 예시
             disk: disk_info,
@@ -316,13 +322,16 @@ class DummyDataGenerator {
                 const server = this.createServerByConfiguration(this.generatedCount + i);
                 newServers.push(server);
                 
-                // 이력 데이터 초기화
+                // 이력 데이터 초기화 (메모리 누수 방지)
                 if (!this.historicalData[server.hostname]) {
                     this.historicalData[server.hostname] = [];
                 }
                 this.historicalData[server.hostname].push({...server, timestamp: new Date().toISOString()});
+                if (this.historicalData[server.hostname].length > this.maxHistoricalPoints) {
+                    this.historicalData[server.hostname].shift();
+                }
             }
-            
+
             // 기존 데이터에 추가
             this.serverData = [...this.serverData, ...newServers];
             this.generatedCount += batchCount;
@@ -481,7 +490,7 @@ class DummyDataGenerator {
             
             let memory_usage_percent = parseFloat((server.memory_usage_percent + memory_delta).toFixed(2));
             memory_usage_percent = Math.max(5, Math.min(98, memory_usage_percent));
-            const memory_usage = Math.floor(server.memory_total * (memory_usage_percent / 100));
+            const memory_usage = Math.floor(server.memory_total_bytes * (memory_usage_percent / 100));
             
             let disk_delta = parseFloat((this.getRandomInt(-5, 7) + timeInfluence * 0.4).toFixed(2)); // 디스크는 천천히 증가 경향
             

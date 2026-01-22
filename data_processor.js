@@ -3,6 +3,14 @@
  * 서버 데이터 처리, 페이지네이션, 필터링 및 UI 업데이트 로직을 구현합니다.
  */
 
+// HTML escape 유틸리티 함수 (XSS 방지)
+function escapeHtml(text) {
+    if (text == null) return '';
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
 class DataProcessor {
     constructor() {
         try {
@@ -1031,7 +1039,7 @@ class DataProcessor {
                 <i class="fas fa-info-circle"></i>
             </div>
             <div class="server-header">
-                <div class="server-name">${server.hostname || 'Unknown Server'}</div>
+                <div class="server-name">${escapeHtml(server.hostname) || 'Unknown Server'}</div>
                 <div class="server-status status-${status}">${this.getStatusLabel(status)}</div>
             </div>
             <div class="server-details">
@@ -1072,7 +1080,7 @@ class DataProcessor {
             </div>
             <div class="services-list">
                 ${server.services ? Object.entries(server.services).map(([name, status]) => `
-                    <div class="service-badge service-${status}">${name} (${status})</div>
+                    <div class="service-badge service-${escapeHtml(status)}">${escapeHtml(name)} (${escapeHtml(status)})</div>
                 `).join('') : '<div class="service-badge">서비스 정보 없음</div>'}
             </div>
             ${hasErrors ? `
@@ -1116,10 +1124,10 @@ class DataProcessor {
             // 서버 상태 정보
             const status = this.getServerStatus(server);
             
-            // 서버 이름과 상태 설정
+            // 서버 이름과 상태 설정 (escapeHtml로 XSS 방지)
             modalTitle.innerHTML = `
-                ${server.hostname} 
-                <span class="server-status status-${status}">${this.getStatusLabel(status)}</span>
+                ${escapeHtml(server.hostname)}
+                <span class="server-status status-${escapeHtml(status)}">${this.getStatusLabel(status)}</span>
             `;
             
             // 모달 내용 업데이트 - 개별 필드 업데이트 방식으로 변경
@@ -1171,9 +1179,9 @@ class DataProcessor {
                 if (server.services && Object.keys(server.services).length > 0) {
                     Object.entries(server.services).forEach(([name, status]) => {
                         const serviceTag = document.createElement('div');
-                        serviceTag.className = `service-status-tag service-${status}`;
+                        serviceTag.className = `service-status-tag service-${escapeHtml(status)}`;
                         serviceTag.innerHTML = `
-                            ${name} 
+                            ${escapeHtml(name)}
                             <span class="status-indicator">
                                 <i class="fas fa-${status === 'running' ? 'check-circle' : 'times-circle'}"></i>
                             </span>
@@ -1192,7 +1200,7 @@ class DataProcessor {
                     modalErrorsContainer.innerHTML = `
                         <div class="alert alert-danger">
                             <ul class="mb-0">
-                                ${server.errors.map(error => `<li>${error}</li>`).join('')}
+                                ${server.errors.map(error => `<li>${escapeHtml(error)}</li>`).join('')}
                             </ul>
                         </div>
                     `;

@@ -49,15 +49,15 @@ class AIProcessor {
                 this.historicalData[hostname] = [];
             }
             
-            // 새 데이터 포인트 추가
+            // 새 데이터 포인트 추가 (안전한 접근)
             this.historicalData[hostname].push({
                 timestamp: currentTimestamp,
                 cpu_usage: server.cpu_usage,
                 memory_usage_percent: server.memory_usage_percent,
-                disk_usage_percent: server.disk[0].disk_usage_percent,
-                network_rx: server.net.rx_bytes,
-                network_tx: server.net.tx_bytes,
-                services: {...server.services},
+                disk_usage_percent: server.disk?.[0]?.disk_usage_percent ?? 0,
+                network_rx: server.net?.rx_bytes ?? 0,
+                network_tx: server.net?.tx_bytes ?? 0,
+                services: {...(server.services || {})},
                 errors: [...(server.errors || [])],
                 status: this.calculateServerStatus(server)
             });
@@ -206,23 +206,28 @@ class AIProcessor {
     }
 
     async processQuery(query) {
-        if (!this.serverData || this.serverData.length === 0) {
-            return '서버 데이터를 불러오는 중입니다. 잠시 후 다시 시도해주세요.';
-        }
+        try {
+            if (!this.serverData || this.serverData.length === 0) {
+                return '서버 데이터를 불러오는 중입니다. 잠시 후 다시 시도해주세요.';
+            }
 
-        // 쿼리 분석
-        const analysis = this.analyzeQuery(query);
-        
-        // 결과 생성
-        if (analysis.requestType === 'problem_analysis') {
-            return this.generateProblemAnalysis();
-        } else if (analysis.requestType === 'solution') {
-            return this.generateSolutions(analysis.target);
-        } else if (analysis.requestType === 'report') {
-            return this.generateReportDownloadLink(analysis.reportType);
-        } else {
-            // 일반 질의 처리
-            return this.generateDataResponse(analysis);
+            // 쿼리 분석
+            const analysis = this.analyzeQuery(query);
+
+            // 결과 생성
+            if (analysis.requestType === 'problem_analysis') {
+                return this.generateProblemAnalysis();
+            } else if (analysis.requestType === 'solution') {
+                return this.generateSolutions(analysis.target);
+            } else if (analysis.requestType === 'report') {
+                return this.generateReportDownloadLink(analysis.reportType);
+            } else {
+                // 일반 질의 처리
+                return this.generateDataResponse(analysis);
+            }
+        } catch (error) {
+            console.error('[AIProcessor] 쿼리 처리 중 오류:', error);
+            return `쿼리 처리 중 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`;
         }
     }
 
@@ -638,7 +643,7 @@ class AIProcessor {
             
             response = `${severityEmoji} 메모리 사용률이 ${threshold}% 이상인 서버: ${highMemoryServers.length}대\n\n`;
             response += highMemoryServers.slice(0, 5).map(server => {
-                const total = (server.memory_total / (1024 * 1024 * 1024)).toFixed(1);
+                const total = (server.memory_total_bytes / (1024 * 1024 * 1024)).toFixed(1);
                 return `${server.hostname}: ${server.memory_usage_percent.toFixed(1)}% (총 ${total} GB)`;
             }).join('\n');
             
@@ -660,27 +665,27 @@ class AIProcessor {
             serverList = serverList.filter(server => server.hostname.includes(analysis.serverType));
         }
         
-        // 디스크 사용량 통계
-        const diskUsages = serverList.map(server => server.disk[0].disk_usage_percent);
+        // 디스크 사용량 통계 (안전한 접근)
+        const diskUsages = serverList.map(server => server.disk?.[0]?.disk_usage_percent ?? 0);
         const avgDiskUsage = this.calculateAverage(diskUsages);
         const maxDiskUsage = Math.max(...diskUsages);
         const minDiskUsage = Math.min(...diskUsages);
-        
+
         // 임계값 이상 서버 찾기
         const threshold = analysis.threshold || 80;
         const highDiskServers = serverList
-            .filter(server => server.disk[0].disk_usage_percent >= threshold)
-            .sort((a, b) => b.disk[0].disk_usage_percent - a.disk[0].disk_usage_percent);
-            
+            .filter(server => (server.disk?.[0]?.disk_usage_percent ?? 0) >= threshold)
+            .sort((a, b) => (b.disk?.[0]?.disk_usage_percent ?? 0) - (a.disk?.[0]?.disk_usage_percent ?? 0));
+
         let response = '';
-        
+
         if (highDiskServers.length > 0) {
-            const severityEmoji = highDiskServers[0].disk[0].disk_usage_percent >= 90 ? this.statusEmoji.critical : this.statusEmoji.warning;
-            
+            const severityEmoji = (highDiskServers[0].disk?.[0]?.disk_usage_percent ?? 0) >= 90 ? this.statusEmoji.critical : this.statusEmoji.warning;
+
             response = `${severityEmoji} 디스크 사용률이 ${threshold}% 이상인 서버: ${highDiskServers.length}대\n\n`;
             response += highDiskServers.slice(0, 5).map(server => {
-                const total = (server.disk[0].disk_total / (1024 * 1024 * 1024)).toFixed(1);
-                return `${server.hostname}: ${server.disk[0].disk_usage_percent.toFixed(1)}% (총 ${total} GB)`;
+                const total = ((server.disk?.[0]?.disk_total ?? 0) / (1024 * 1024 * 1024)).toFixed(1);
+                return `${server.hostname}: ${(server.disk?.[0]?.disk_usage_percent ?? 0).toFixed(1)}% (총 ${total} GB)`;
             }).join('\n');
             
             if (highDiskServers.length > 5) {
@@ -737,24 +742,26 @@ class AIProcessor {
 
     generateGeneralStatusResponse() {
         const total = this.serverData.length;
-        const criticalServers = this.serverData.filter(server => 
-            server.cpu_usage >= 90 || 
-            server.memory_usage_percent >= 90 || 
-            server.disk[0].disk_usage_percent >= 90
+        const criticalServers = this.serverData.filter(server =>
+            server.cpu_usage >= 90 ||
+            server.memory_usage_percent >= 90 ||
+            (server.disk?.[0]?.disk_usage_percent ?? 0) >= 90
         );
-        const warningServers = this.serverData.filter(server => 
-            (server.cpu_usage >= 70 && server.cpu_usage < 90) || 
-            (server.memory_usage_percent >= 70 && server.memory_usage_percent < 90) || 
-            (server.disk[0].disk_usage_percent >= 70 && server.disk[0].disk_usage_percent < 90)
+        const warningServers = this.serverData.filter(server =>
+            (server.cpu_usage >= 70 && server.cpu_usage < 90) ||
+            (server.memory_usage_percent >= 70 && server.memory_usage_percent < 90) ||
+            ((server.disk?.[0]?.disk_usage_percent ?? 0) >= 70 && (server.disk?.[0]?.disk_usage_percent ?? 0) < 90)
         );
         
         const stoppedServices = [];
         this.serverData.forEach(server => {
-            Object.entries(server.services).forEach(([service, status]) => {
-                if (status === 'stopped') {
-                    stoppedServices.push(`${server.hostname}: ${service}`);
-                }
-            });
+            if (server.services) {
+                Object.entries(server.services).forEach(([service, status]) => {
+                    if (status === 'stopped') {
+                        stoppedServices.push(`${server.hostname}: ${service}`);
+                    }
+                });
+            }
         });
         
         let response = `📊 전체 서버 상태 요약 (총 ${total}대)\n\n`;
